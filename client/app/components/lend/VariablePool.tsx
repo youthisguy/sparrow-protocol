@@ -36,21 +36,27 @@ export default function VariablePool() {
     const amt = toUnit(depositAmt);
     if (!amt) return addToast("Enter deposit amount", "error");
     sendTx("lend", "deposit", [], amt, "Deposit");
+    setWithdrawShares("")
+    setDepositAmt("")
   };
 
   const handleWithdraw = () => {
     const shares = BigInt(withdrawShares || "0");
     if (!shares) return addToast("Enter shares to withdraw", "error");
     sendTx("lend", "withdraw", [shares.toString()], 0n, "Withdraw");
+    setWithdrawShares("")
+    setDepositAmt("")
   };
 
   const handleHarvestYield = () => {
     sendTx("lend", "harvestYield", [], 0n, "Harvest Yield");
+    setWithdrawShares("")
+    setDepositAmt("")
   };
 
   return (
-    <div className="card" style={{ padding: 24 }}>
-      <div className="section-header">
+    <div className="card" style={{ padding: 24,  borderRadius: 10, }}>
+      <div className="section-header" >
         <span className="section-title">◈ Variable Pool</span>
         <div className="section-line" />
         {poolStats && (
@@ -66,19 +72,24 @@ export default function VariablePool() {
           gridTemplateColumns: "1fr 1fr 1fr",
           gap: 10,
           marginBottom: 24,
+          borderRadius: 10,
         }}
       >
         {[
           { label: "My Shares", value: lenderShares, cls: "" },
           { label: "Pool Value", value: lenderValue + " POT", cls: "" },
-          { label: "Pending Yield", value: pendingYield + " POT", cls: "green" },
+          {
+            label: "Pending Yield",
+            value: pendingYield + " POT",
+            cls: "green",
+          },
         ].map((s) => (
           <div
             key={s.label}
             style={{
               background: "var(--bg-elevated)",
               border: "1px solid var(--border)",
-              borderRadius: 6,
+              borderRadius: 10,
               padding: "10px 12px",
             }}
           >
@@ -97,7 +108,7 @@ export default function VariablePool() {
         ))}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14,  borderRadius: 10, }}>
         {/* Deposit */}
         <div>
           <div className="field-label">Deposit Amount (POT)</div>
@@ -129,7 +140,9 @@ export default function VariablePool() {
               marginBottom: 6,
             }}
           >
-            <div className="field-label" style={{ margin: 0 }}>Withdraw (shares)</div>
+            <div className="field-label" style={{ margin: 0 }}>
+              Withdraw (shares)
+            </div>
             {/* Percentage quick-fill buttons */}
             <div style={{ display: "flex", gap: 4 }}>
               {[20, 50, 100].map((pct) => (
@@ -141,7 +154,7 @@ export default function VariablePool() {
                     fontFamily: "var(--font-mono, monospace)",
                     fontSize: 10,
                     padding: "2px 7px",
-                    borderRadius: 4,
+                    borderRadius: 8,
                     border: "1px solid var(--border)",
                     background: "transparent",
                     color: "var(--text-secondary)",
@@ -168,23 +181,38 @@ export default function VariablePool() {
               disabled={!!loading}
               style={{ flexShrink: 0 }}
             >
-              {loading === "Withdraw" ? <div className="spinner" /> : "Withdraw"}
+              {loading === "Withdraw" ? (
+                <div className="spinner" />
+              ) : (
+                "Withdraw"
+              )}
             </button>
           </div>
         </div>
-
         {/* Harvest */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginRight: "6px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginRight: "6px",
+            }}
+          >
             Yield accumulates each block. Harvest anytime.
           </div>
           <button
-            className="btn btn-ghost"
-            onClick={handleHarvestYield}
-            disabled={!!loading}
-          >
-            {loading === "Harvest Yield" ? <div className="spinner" /> : "Harvest Yield"}
-          </button>
+  className="btn btn-ghost"
+  onClick={handleHarvestYield}
+  disabled={!!loading}
+>
+  {loading === "Harvest Yield" ? <div className="spinner" /> : "🌾 Harvest Yield"}
+</button>
         </div>
       </div>
 
@@ -193,7 +221,7 @@ export default function VariablePool() {
           marginTop: 20,
           padding: "12px 14px",
           background: "var(--bg-elevated)",
-          borderRadius: 6,
+          borderRadius: 10,
           border: "1px solid var(--border)",
           fontSize: 11,
           color: "var(--text-muted)",

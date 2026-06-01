@@ -27,7 +27,7 @@
 │                                                           │
 │  • Variable deposits → MasterChef yield shares            │
 │  • Fixed deposits    → Guaranteed APY                     │
-│  • Kinked rate model → 2% → 8% optimal → 30% max         │
+│  • Kinked rate model → 2% → 8% optimal → 30% max          │
 │  • Reserve factor    → 10% of interest to protocol        │
 └──────────────────────┬───────────────────────────────────┘
                        │ borrow_for() / repay_for()
@@ -101,8 +101,8 @@ portaldot-hackathon-2026-sparrow-protocol-sparrow-protocol/
 
 | Contract | Address |
 |---|---|
-| SparrowLend | `5EiRyzh5RK6GtPRNhJszYDM9JcsyAhNYqUc4bdaQSvGxc4nP` |
-| SparrowMargin | `5Gg7Zo81UehoGZbeEgS2dmjZwiVaJEVQVPTqT8qVHHAGYa8W` |
+| SparrowLend | `5DneqbcDeANscg4PW99WJysFavNqFEFY5X6QCtMYSWRcQGT3` |
+| SparrowMargin | `5E1Yb3AtSAA2KgqzowdTgX8YWT1Gnhw7mSr7s4MoaHyH5pjJ` |
 
 **Network:** `ws://127.0.0.1:9944` (substrate-contracts-node --dev)  
 **Deployer:** `5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY` (Alice `//Alice`)
@@ -162,7 +162,7 @@ cargo contract instantiate \
   --suri //Alice \
   --url ws://127.0.0.1:9944 \
   --execute
-# Note the printed contract address → 5EiRyzh5RK6GtPRNhJszYDM9JcsyAhNYqUc4bdaQSvGxc4nP
+# Note the printed contract address → 5DneqbcDeANscg4PW99WJysFavNqFEFY5X6QCtMYSWRcQGT3
 ```
 
 **5. Deploy SparrowMargin**
@@ -172,7 +172,7 @@ cd ../sparrowmargin
 cargo contract instantiate \
   target/ink/sparrowmargin.contract \
   --constructor new \
-  --args 5EiRyzh5RK6GtPRNhJszYDM9JcsyAhNYqUc4bdaQSvGxc4nP 1000000 \
+  --args 5DneqbcDeANscg4PW99WJysFavNqFEFY5X6QCtMYSWRcQGT3 1000000 \
   --suri //Alice \
   --url ws://127.0.0.1:9944 \
   --execute
@@ -184,9 +184,9 @@ cargo contract instantiate \
 ```bash
 cd ../sparrowlend
 cargo contract call \
-  --contract 5EiRyzh5RK6GtPRNhJszYDM9JcsyAhNYqUc4bdaQSvGxc4nP \
+  --contract 5DneqbcDeANscg4PW99WJysFavNqFEFY5X6QCtMYSWRcQGT3 \
   --message set_margin_contract \
-  --args 5Gg7Zo81UehoGZbeEgS2dmjZwiVaJEVQVPTqT8qVHHAGYa8W \
+  --args 5E1Yb3AtSAA2KgqzowdTgX8YWT1Gnhw7mSr7s4MoaHyH5pjJ \
   --suri //Alice \
   --url ws://127.0.0.1:9944 \
   --execute
@@ -203,8 +203,8 @@ npm run dev
 
 ## Demo
 
-**Video Link:** `https://youtu.be/La3cF0vxsXA` 
-**Live demo Link:** `app-sparrow.vercel.app`  
+**Video Link:** [https://youtu.be/La3cF0vxsXA](https://youtu.be/La3cF0vxsXA)
+**Live demo Link:** [app-sparrow.vercel.app](https://app-sparrow.vercel.app)
 
 ## Roadmap
 
@@ -229,10 +229,10 @@ npm run dev
 
 - **Team Name:** Sparrow Protocol
 - **Members & roles:** Solo, Fullstack / Smart Contract dev
-- **Contact:** `https://t.me/@youthisguy`
+- **Contact:** [https://t.me/@youthisguy](https://t.me/@youthisguy)
 
 ---
 
 ## License
 
-MIT
+[MIT](./LICENSE.txt)

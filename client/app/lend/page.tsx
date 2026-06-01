@@ -23,7 +23,7 @@ function LendStatsBar() {
   return (
     <div className="lend-stats-bar">
       {stats.map((s) => (
-        <div key={s.label} className="lend-stat-item">
+        <div key={s.label} className="lend-stat-item"  style={{ borderRadius: 10 }}>
           <div className="stat-label">{s.label}</div>
           <div className={`stat-value ${s.cls}`} style={{ fontSize: 15 }}>
             {s.value}
@@ -66,7 +66,6 @@ export default function LendPage() {
         .lend-stats-bar {
           display: flex;
           flex-shrink: 0;
-          border-bottom: 1px solid var(--border);
         }
 
         .lend-stat-item {

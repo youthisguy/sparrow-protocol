@@ -10,9 +10,9 @@ import {
   ReactNode,
 } from "react";
 
-const SPARROWLEND_ADDRESS = "5EiRyzh5RK6GtPRNhJszYDM9JcsyAhNYqUc4bdaQSvGxc4nP";
+const SPARROWLEND_ADDRESS = "5DneqbcDeANscg4PW99WJysFavNqFEFY5X6QCtMYSWRcQGT3";
 const SPARROWMARGIN_ADDRESS =
-  "5Gg7Zo81UehoGZbeEgS2dmjZwiVaJEVQVPTqT8qVHHAGYa8W";
+  "5E1Yb3AtSAA2KgqzowdTgX8YWT1Gnhw7mSr7s4MoaHyH5pjJ";
 const WS_ENDPOINT = "ws://127.0.0.1:9944";
 const UNIT = 1_000_000_000_000n;
 

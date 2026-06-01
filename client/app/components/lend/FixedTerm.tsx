@@ -50,7 +50,7 @@ export default function FixedTerm() {
     : null;
 
   return (
-    <div className="card" style={{ padding: 24 }}>
+    <div className="card" style={{ padding: 24, borderRadius: 10 }}>
       {/* Section header */}
       <div className="section-header">
         <span className="section-title">◆ Fixed-Term Deposit</span>
