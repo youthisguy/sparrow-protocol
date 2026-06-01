@@ -333,7 +333,14 @@ mod sparrowmargin {
             let repayable         = pool_recovery.min(pos.borrowed.checked_add(interest).expect("Repay overflow"));
 
             if repayable > 0 {
-                self.call_repay_for(pos.borrowed.min(repayable), repayable);
+                let principal_to_repay = pos.borrowed.min(repayable);
+                let shortfall          = pos.borrowed.saturating_sub(principal_to_repay);
+            
+                self.call_repay_for(principal_to_repay, repayable);
+            
+                if shortfall > 0 {
+                    self.call_cover_bad_debt(shortfall);
+                }
             }
 
             match pos.direction {
@@ -444,16 +451,19 @@ mod sparrowmargin {
             let interest = self.calc_borrow_interest(pos);
             let debt     = pos.borrowed.checked_add(interest).expect("Debt overflow");
             if debt == 0 { return u32::MAX; }
-
+        
             let (pnl, is_profit) = self.calc_pnl(pos);
-            let col_val = if is_profit {
-                pos.collateral.saturating_add(pnl)
+            
+            // Current market value of the full position
+            let position_value = pos.collateral.checked_add(pos.borrowed).expect("Size overflow");
+            let current_value  = if is_profit {
+                position_value.saturating_add(pnl)
             } else {
-                pos.collateral.saturating_sub(pnl)
+                position_value.saturating_sub(pnl)
             };
-
-            let hf = col_val.checked_mul(100).expect("HF overflow")
-                             .checked_div(debt).unwrap_or(0);
+ 
+            let hf = current_value.checked_mul(100).expect("HF overflow")
+                                  .checked_div(debt).unwrap_or(0);
             u32::try_from(hf).unwrap_or(u32::MAX)
         }
 
@@ -473,22 +483,23 @@ mod sparrowmargin {
         fn calc_collateral_needed_for_health(&self, pos: &Position) -> Balance {
             let hf = self.calc_health_factor(pos);
             if hf >= self.margin_call_hf { return 0; }
-
-            let interest = self.calc_borrow_interest(pos);
-            let debt     = pos.borrowed.saturating_add(interest);
-
-            let target_col = debt
+        
+            let interest      = self.calc_borrow_interest(pos);
+            let debt          = pos.borrowed.saturating_add(interest);
+            let position_size = pos.collateral.saturating_add(pos.borrowed);
+        
+            let (pnl, is_profit) = self.calc_pnl(pos);
+            let current_value = if is_profit {
+                position_size.saturating_add(pnl)
+            } else {
+                position_size.saturating_sub(pnl)
+            };
+        
+            let target_value = debt
                 .checked_mul(self.margin_call_hf as u128).unwrap_or(u128::MAX)
                 .checked_div(100).unwrap_or(0);
-
-            let (pnl, is_profit) = self.calc_pnl(pos);
-            let current_col_value = if is_profit {
-                pos.collateral.saturating_add(pnl)
-            } else {
-                pos.collateral.saturating_sub(pnl)
-            };
-
-            target_col.saturating_sub(current_col_value)
+        
+            target_value.saturating_sub(current_value)
         }
 
         fn maybe_settle_funding(&mut self) {
@@ -504,6 +515,17 @@ mod sparrowmargin {
             });
         }
         // >> Cross-contract calls >>
+
+        fn call_cover_bad_debt(&self, shortfall: Balance) {
+            use ink::env::call::{build_call, ExecutionInput, Selector};
+            use ink::env::DefaultEnvironment;
+            let _ = build_call::<DefaultEnvironment>()
+                .call(self.lend_contract)
+                .exec_input(ExecutionInput::new(
+                    Selector::new(ink::selector_bytes!("cover_bad_debt"))
+                ).push_arg(shortfall))
+                .returns::<bool>().try_invoke().expect("cover_bad_debt failed");
+        }
         
         fn call_borrow_for(&self, amount: Balance) {
             use ink::env::call::{build_call, ExecutionInput, Selector};

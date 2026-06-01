@@ -30,7 +30,7 @@ export default function FixedTerm() {
   };
 
   const blocksToTime = (blocks: number) => {
-    const seconds = blocks * 6;
+    const seconds = blocks * 12;
     if (seconds < 3600) return `~${Math.round(seconds / 60)} min`;
     if (seconds < 86400) return `~${(seconds / 3600).toFixed(1)} hrs`;
     return `~${(seconds / 86400).toFixed(1)} days`;
@@ -281,7 +281,7 @@ export default function FixedTerm() {
               {(
                 (parseFloat(fixedAmt) * lockedRate) /
                 100 /
-                (5_256_000 / blockCount)
+                (2_628_000 / blockCount)
               ).toFixed(4)}{" "}
               POT
               <span style={{ color: "var(--text-muted)" }}>

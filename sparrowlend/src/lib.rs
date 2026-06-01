@@ -25,6 +25,7 @@ mod sparrowlend {
 
     #[ink(storage)]
     pub struct Sparrowlend {
+        fixed_pool_balance: Balance,
         pool_balance:   Balance,
         total_borrowed: Balance,
         total_shares:     Balance,
@@ -112,6 +113,7 @@ mod sparrowlend {
         #[ink(constructor)]
         pub fn new() -> Self {
             Self {
+                fixed_pool_balance: 0,
                 pool_balance: 0,
                 total_borrowed: 0,
                 total_shares: 0,
@@ -252,7 +254,7 @@ mod sparrowlend {
 
             let rate         = self.get_current_borrow_rate();
             let unlock_block = self.env().block_number() + lock_blocks;
-            self.pool_balance += amount;
+            self.fixed_pool_balance += amount;
 
             self.fixed_deposits.insert(caller, &FixedDeposit {
                 principal: amount,
@@ -278,7 +280,7 @@ mod sparrowlend {
         
             let current_block = self.env().block_number();
             let is_early      = current_block < deposit.unlock_block;
-
+        
             let elapsed = current_block
                 .min(deposit.unlock_block)
                 .saturating_sub(deposit.deposit_block) as u128;
@@ -286,31 +288,36 @@ mod sparrowlend {
                 * deposit.guaranteed_rate_bps as u128
                 * elapsed
                 / (10_000 * self.blocks_per_year);
-
-            let (payout, penalty) = if is_early {
-                let penalty_amt = interest
-                    * deposit.early_penalty_bps as u128
-                    / 10_000;
-                let net_interest = interest.saturating_sub(penalty_amt);
-                self.protocol_reserve += penalty_amt;
-                (deposit.principal + net_interest, penalty_amt)
+        
+            let (net_interest, penalty) = if is_early {
+                let penalty_amt  = interest * deposit.early_penalty_bps as u128 / 10_000;
+                self.protocol_reserve   += penalty_amt;
+                self.fixed_pool_balance -= penalty_amt;
+                (interest.saturating_sub(penalty_amt), penalty_amt)
             } else {
-                (deposit.principal + interest, 0)
+                (interest, 0)
             };
-
-            assert!(self.pool_balance >= payout, "Insufficient liquidity");
-
+        
+            // Principal comes from the ring-fenced fixed pool,
+            // interest comes from pool_balance (funded by margin repayments).
+            assert!(self.fixed_pool_balance >= deposit.principal, "Insufficient fixed liquidity");
+            assert!(self.pool_balance >= net_interest, "Insufficient liquidity for interest");
+        
+            self.fixed_pool_balance -= deposit.principal;
+            self.pool_balance        = self.pool_balance.saturating_sub(net_interest);
+        
+            let payout = deposit.principal + net_interest;
+        
             let mut d   = deposit;
             d.is_active = false;
             self.fixed_deposits.insert(caller, &d);
-            self.pool_balance -= payout;
-
+        
             self.env().transfer(caller, payout).expect("Transfer failed");
-
+        
             self.env().emit_event(FixedWithdrawn {
-                lender: caller,
-                principal: d.principal,
-                interest_earned: interest.saturating_sub(penalty),
+                lender:          caller,
+                principal:       d.principal,
+                interest_earned: net_interest,
                 penalty,
             });
         }
@@ -368,6 +375,9 @@ mod sparrowlend {
         }
 
         // ── View Functions ────────────────────────────────────────────────────
+
+        #[ink(message)]
+        pub fn get_fixed_pool_balance(&self) -> Balance { self.fixed_pool_balance }
 
         #[ink(message)]
         pub fn get_current_borrow_rate(&self) -> u32 {
@@ -769,11 +779,11 @@ mod sparrowlend {
         #[ink::test]
         fn test_fixed_withdraw_at_maturity_succeeds() {
             let mut c = new_contract();
-            c.pool_balance += 2000;
             set_caller(alice());
             set_value(1000);
             set_block(0);
-            c.deposit_fixed(500);
+            c.deposit_fixed(500);          
+            c.pool_balance += 2000;       
             set_block(500);
             c.withdraw_fixed();
             let (_, _, _, _, active) = c.get_fixed_deposit(alice()).unwrap();
@@ -783,11 +793,11 @@ mod sparrowlend {
         #[ink::test]
         fn test_early_fixed_withdrawal_charges_penalty() {
             let mut c = new_contract();
-            c.pool_balance += 2000;
             set_caller(alice());
             set_value(1000);
             set_block(0);
-            c.deposit_fixed(1000);
+            c.deposit_fixed(1000);       
+            c.pool_balance += 2000;       
             set_block(500);
             let reserve_before = c.protocol_reserve;
             c.withdraw_fixed();
