@@ -16,7 +16,7 @@ interface PositionStatusData {
   isProfit: boolean;
   interest: bigint;
   collateralNow: bigint;
-  collateralNeeded: bigint;  
+  collateralNeeded: bigint;
 }
 
 const STATUS_COLORS: Record<PositionStatus, string> = {
@@ -45,10 +45,10 @@ function decodeStatusTuple(
   raw: unknown,
   positionId: bigint
 ): PositionStatusData | null {
- 
   let data = raw;
   if (data && typeof data === "object" && !Array.isArray(data)) {
-    data = (data as any).ok ?? (data as any).value ?? Object.values(data as any)[0];
+    data =
+      (data as any).ok ?? (data as any).value ?? Object.values(data as any)[0];
   }
 
   if (!Array.isArray(data) || data.length < 7) {
@@ -56,11 +56,18 @@ function decodeStatusTuple(
     return null;
   }
 
-  const [hf, statusRaw, pnlAmount, isProfit, interest, collateralNow, collateralNeeded] = data;
+  const [
+    hf,
+    statusRaw,
+    pnlAmount,
+    isProfit,
+    interest,
+    collateralNow,
+    collateralNeeded,
+  ] = data;
 
   let status: PositionStatus = "Healthy";
   if (typeof statusRaw === "string") {
- 
     const map: Record<string, PositionStatus> = {
       healthy: "Healthy",
       margincall: "MarginCall",
@@ -69,7 +76,6 @@ function decodeStatusTuple(
     };
     status = map[statusRaw.toLowerCase()] ?? (statusRaw as PositionStatus);
   } else if (statusRaw && typeof statusRaw === "object") {
- 
     const key = Object.keys(statusRaw)[0];
     const map: Record<string, PositionStatus> = {
       healthy: "Healthy",
@@ -81,7 +87,6 @@ function decodeStatusTuple(
     status = map[key] ?? (key as PositionStatus);
   }
 
- 
   const toBigInt = (v: unknown): bigint => {
     if (v === null || v === undefined) return 0n;
     const s = v.toString();
@@ -92,10 +97,10 @@ function decodeStatusTuple(
     positionId,
     hf: Number(hf),
     status,
-    pnlAmount:        toBigInt(pnlAmount),
-    isProfit:         Boolean(isProfit),
-    interest:         toBigInt(interest),
-    collateralNow:    toBigInt(collateralNow),
+    pnlAmount: toBigInt(pnlAmount),
+    isProfit: Boolean(isProfit),
+    interest: toBigInt(interest),
+    collateralNow: toBigInt(collateralNow),
     collateralNeeded: toBigInt(collateralNeeded),
   };
 }
@@ -119,18 +124,27 @@ export default function TradePanel() {
   const [posLeverage, setPosLeverage] = useState(100);
   const [posCollateral, setPosCollateral] = useState("");
   const [mockPrice, setMockPrice] = useState("");
-
   const [mcHfInput, setMcHfInput] = useState("");
-
   const [statusMap, setStatusMap] = useState<
     Record<string, PositionStatusData>
   >({});
-
   const [addColInputs, setAddColInputs] = useState<Record<string, string>>({});
+
+  // Gate modal state
+  const [gateOpen, setGateOpen] = useState(false);
 
   const posDirection = activeTab === "long" ? "Long" : "Short";
 
-  // ── Poll get_position_status for every open position ─────────────
+  // ── Helper: run an action only if connected, else open gate ──────────────────
+  const requireWallet = (action: () => void) => {
+    if (!connected) {
+      setGateOpen(true);
+      return;
+    }
+    action();
+  };
+
+  // ── Poll get_position_status for every open position ─────────────────────────
   const pollPositionStatuses = useCallback(async () => {
     if (!connected || !positions?.length || typeof query !== "function") return;
     const updates: Record<string, PositionStatusData> = {};
@@ -141,7 +155,6 @@ export default function TradePanel() {
           const raw = await query("margin", "getPositionStatus", [
             id.toString(),
           ]);
-
           console.log("raw status for", id.toString(), JSON.stringify(raw));
           const decoded = decodeStatusTuple(raw, id);
           if (decoded) updates[id.toString()] = decoded;
@@ -154,63 +167,67 @@ export default function TradePanel() {
 
   useEffect(() => {
     pollPositionStatuses();
-    // poll every ~6 s
     const interval = setInterval(pollPositionStatuses, 6_000);
     return () => clearInterval(interval);
   }, [pollPositionStatuses]);
 
-  // ── Handlers ──────────────────────────────────────────────────────
-  const handleDepositCollateral = () => {
-    const amt = toUnit(collateralAmt);
-    if (!amt) return addToast("Enter collateral amount", "error");
-    sendTx("margin", "depositCollateral", [], amt, "Deposit Collateral");
-    setCollateralAmt("");
-  };
+  // ── Handlers ──────────────────────────────────────────────────────────────────
+  const handleDepositCollateral = () =>
+    requireWallet(() => {
+      const amt = toUnit(collateralAmt);
+      if (!amt) return addToast("Enter collateral amount", "error");
+      sendTx("margin", "depositCollateral", [], amt, "Deposit Collateral");
+      setCollateralAmt("");
+    });
 
-  const handleOpenPosition = () => {
-    const colAmt = toUnit(posCollateral);
-    if (!colAmt) return addToast("Enter collateral for position", "error");
-    const direction =
-      posDirection === "Long" ? { Long: null } : { Short: null };
-    sendTx(
-      "margin",
-      "openPosition",
-      [direction, posLeverage, colAmt.toString()],
-      0n,
-      `Open ${posDirection}`
-    );
-    setPosCollateral("");
-  };
+  const handleOpenPosition = () =>
+    requireWallet(() => {
+      const colAmt = toUnit(posCollateral);
+      if (!colAmt) return addToast("Enter collateral for position", "error");
+      const direction =
+        posDirection === "Long" ? { Long: null } : { Short: null };
+      sendTx(
+        "margin",
+        "openPosition",
+        [direction, posLeverage, colAmt.toString()],
+        0n,
+        `Open ${posDirection}`
+      );
+      setPosCollateral("");
+    });
 
-  const handleSetMockPrice = () => {
-    const p = toUnit(mockPrice);
-    if (!p) return addToast("Enter price", "error");
-    sendTx("margin", "setMockPrice", [p.toString()], 0n, "Set Mock Price");
-    setMockPrice("");
-  };
+  const handleSetMockPrice = () =>
+    requireWallet(() => {
+      const p = toUnit(mockPrice);
+      if (!p) return addToast("Enter price", "error");
+      sendTx("margin", "setMockPrice", [p.toString()], 0n, "Set Mock Price");
+      setMockPrice("");
+    });
 
-  const handleSetMarginCallHf = () => {
-    const hf = parseInt(mcHfInput, 10);
-    if (isNaN(hf) || hf <= 0)
-      return addToast("Enter a valid HF value", "error");
-    sendTx("margin", "setMarginCallHf", [hf], 0n, "Set Margin Call HF");
-    setMcHfInput("");
-  };
+  const handleSetMarginCallHf = () =>
+    requireWallet(() => {
+      const hf = parseInt(mcHfInput, 10);
+      if (isNaN(hf) || hf <= 0)
+        return addToast("Enter a valid HF value", "error");
+      sendTx("margin", "setMarginCallHf", [hf], 0n, "Set Margin Call HF");
+      setMcHfInput("");
+    });
 
-  const handleAddCollateralToPosition = (positionId: bigint) => {
-    const key = positionId.toString();
-    const raw = addColInputs[key] ?? "";
-    const amt = toUnit(raw);
-    if (!amt) return addToast("Enter amount to add", "error");
-    sendTx(
-      "margin",
-      "addCollateralToPosition",
-      [key],
-      amt,
-      `Add Collateral #${key}`
-    );
-    setAddColInputs((prev) => ({ ...prev, [key]: "" }));
-  };
+  const handleAddCollateralToPosition = (positionId: bigint) =>
+    requireWallet(() => {
+      const key = positionId.toString();
+      const raw = addColInputs[key] ?? "";
+      const amt = toUnit(raw);
+      if (!amt) return addToast("Enter amount to add", "error");
+      sendTx(
+        "margin",
+        "addCollateralToPosition",
+        [key],
+        amt,
+        `Add Collateral #${key}`
+      );
+      setAddColInputs((prev) => ({ ...prev, [key]: "" }));
+    });
 
   const token = {
     bgElevated: "#1e2225",
@@ -239,732 +256,486 @@ export default function TradePanel() {
     padding: 0,
   };
 
-  if (!connected) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          padding: 40,
-          gap: 16,
-        }}
-      >
-        <p
-          style={{
-            color: "var(--text-muted)",
-            fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: 12,
-          }}
-        >
-          Connect your wallet to start trading
-        </p>
-        <button
-          className="btn btn-primary"
-          onClick={connect}
-          disabled={connecting}
-        >
-          {connecting ? (
-            <>
-              <span className="spinner" /> Connecting…
-            </>
-          ) : (
-            "Connect Wallet"
-          )}
-        </button>
-      </div>
-    );
-  }
-
   return (
-<div style={{ minHeight: "100%", overflowY: "auto" }} className="trade-panel-inner">
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {/* ── Long / Short tab bar ── */}
-        <div style={{ display: "flex", gap: 6, padding: "10px 0px" }}>
-          {(["long", "short"] as TradeTab[]).map((tab) => {
-            const isActive = activeTab === tab;
-            const isLong = tab === "long";
-            const activeColor = isLong ? "#00d084" : "#ff4757";
-            const activeDim = isLong
-              ? "rgba(0,208,132,0.15)"
-              : "rgba(255,71,87,0.15)";
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  flex: 1,
-                  padding: "9px 0",
-                  border: `1px solid ${
-                    isActive ? activeColor : "var(--border)"
-                  }`,
-                  borderRadius: 12,
-                  background: isActive ? activeDim : "transparent",
-                  color: isActive ? activeColor : "var(--text-muted)",
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-              >
-                {isLong ? "▲ Long" : "▼ Short"}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ── Card body ── */}
-        <div
-          style={{
-            padding: "18px 0px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-          }}
-        >
-          {/* Deposit collateral block */}
-          <div
-            style={{
-              background: "var(--bg-elevated)",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              padding: "12px 14px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 10,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Add Collateral
-              </span>
-            </div>
-            <input
-              type="text"
-              placeholder="0.00"
-              value={collateralAmt}
-              onChange={(e) => setCollateralAmt(e.target.value)}
-              style={inputStyle}
-            />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: 8,
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <span
+    <>
+      <div
+        style={{ minHeight: "100%", overflowY: "auto" }}
+        className="trade-panel-inner"
+      >
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {/* ── Long / Short tab bar ── */}
+          <div style={{ display: "flex", gap: 6, padding: "10px 0px" }}>
+            {(["long", "short"] as TradeTab[]).map((tab) => {
+              const isActive = activeTab === tab;
+              const isLong = tab === "long";
+              const activeColor = isLong ? "#00d084" : "#ff4757";
+              const activeDim = isLong
+                ? "rgba(0,208,132,0.15)"
+                : "rgba(255,71,87,0.15)";
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
                   style={{
+                    flex: 1,
+                    padding: "9px 0",
+                    border: `1px solid ${
+                      isActive ? activeColor : "var(--border)"
+                    }`,
+                    borderRadius: 12,
+                    background: isActive ? activeDim : "transparent",
+                    color: isActive ? activeColor : "var(--text-muted)",
                     fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: 9,
-                    color: "var(--text-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    letterSpacing: "0.05em",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
                   }}
                 >
-                  Available:
-                </span>
-                <span
-                  style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: 13,
-                    color: "var(--accent-amber)",
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  {freeCollateral}{" "}
-                  <span style={{ fontSize: 9, opacity: 0.7 }}>POT</span>
-                </span>
-              </div>
-              <button
-                onClick={handleDepositCollateral}
-                disabled={!!loading}
-                style={{
-                  background: "var(--accent-amber)",
-                  color: "#0d0e0f",
-                  border: "none",
-                  borderRadius: 4,
-                  padding: "3px 10px",
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {loading === "Deposit Collateral" ? "…" : "+ Add"}
-              </button>
-            </div>
+                  {isLong ? "▲ Long" : "▼ Short"}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Position collateral input */}
+          {/* ── Card body ── */}
           <div
             style={{
-              background: token.bgElevated,
-              borderRadius: 10,
-              border: `1px solid ${token.border}`,
-              padding: "12px 14px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 10,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 10,
-                  color: token.textMuted,
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Collateral to Use (POT)
-              </span>
-            </div>
-            <input
-              type="text"
-              placeholder="0.00"
-              value={posCollateral}
-              onChange={(e) => setPosCollateral(e.target.value)}
-              style={{
-                ...inputStyle,
-                color: posCollateral
-                  ? "var(--text-primary)"
-                  : "var(--text-muted)",
-              }}
-            />
-            {posCollateral && (
-              <div className="position-size-preview">
-                Position size ≈{" "}
-                {(
-                  (parseFloat(posCollateral || "0") * posLeverage) /
-                  100
-                ).toFixed(3)}{" "}
-                POT
-              </div>
-            )}
-          </div>
-
-          {/* Leverage slider */}
-          <div style={{ padding: "2px 0" }}>
-            <div style={{ ...labelStyle, marginBottom: 8 }}>Leverage</div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {[100, 200, 300, 500].map((lev) => {
-                const isActive = posLeverage === lev;
-                return (
-                  <button
-                    key={lev}
-                    onClick={() => setPosLeverage(lev)}
-                    style={{
-                      flex: 1,
-                      padding: "5px 0",
-                      borderRadius: 6,
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      border: `1px solid ${
-                        isActive ? "var(--accent-amber)" : "var(--border)"
-                      }`,
-                      background: isActive
-                        ? "var(--accent-amber)"
-                        : "transparent",
-                      color: isActive ? "#0d0e0f" : "var(--text-muted)",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {lev / 100}×
-                  </button>
-                );
-              })}
-            </div>
-            <div
-              style={{
-                position: "relative",
-                height: 20,
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  height: 6,
-                  borderRadius: 3,
-                  background: `repeating-linear-gradient(-55deg, transparent, transparent 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 5px), linear-gradient(to right, #2a9d3a, #f0c040, #e03030)`,
-                }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  height: 6,
-                  borderRadius: "0 3px 3px 0",
-                  background: "var(--bg-secondary, #1a1b1c)",
-                  width: `${100 - ((posLeverage - 100) / 400) * 100}%`,
-                  transition: "width 0.15s",
-                }}
-              />
-              <input
-                type="range"
-                min="100"
-                max="500"
-                step="100"
-                value={posLeverage}
-                onChange={(e) => setPosLeverage(parseInt(e.target.value))}
-                style={{
-                  position: "absolute",
-                  width: "100%",
-                  opacity: 0,
-                  cursor: "pointer",
-                  margin: 0,
-                  padding: 0,
-                  height: "100%",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontFamily: "'IBM Plex Mono', monospace",
-                fontSize: 9,
-                color: "var(--text-muted)",
-                marginTop: 3,
-              }}
-            >
-              {["1×", "2×", "3×", "4×", "5×"].map((l) => (
-                <span key={l}>{l}</span>
-              ))}
-            </div>
-          </div>
-
-          {/* Open position button */}
-          <button
-            onClick={handleOpenPosition}
-            disabled={!!loading}
-            style={{
-              width: "100%",
-              padding: "13px 0",
-              borderRadius: 10,
-              border: "none",
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.5 : 1,
-              background:
-                activeTab === "long"
-                  ? "var(--accent-green)"
-                  : "var(--accent-red)",
-              color: "#0d0e0f",
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: "0.02em",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            {loading?.startsWith("Open") ? (
-              <span className="spinner" />
-            ) : (
-              `Open ${posDirection} ${posLeverage / 100}× Position`
-            )}
-          </button>
-
-          {/* Trade summary */}
-          <div
-            style={{
+              padding: "18px 0px",
               display: "flex",
               flexDirection: "column",
-              gap: 7,
-              padding: "2px 0",
+              gap: 14,
             }}
           >
-            {[
-              { label: "POT Price", value: `${currentPrice} POT` },
-              {
-                label: "Position Size",
-                value: posCollateral
-                  ? `${(
-                      (parseFloat(posCollateral) * posLeverage) /
-                      100
-                    ).toFixed(3)} POT`
-                  : "--",
-              },
-            ].map(({ label, value }) => (
+            {/* Deposit collateral block */}
+            <div
+              style={{
+                background: "var(--bg-elevated)",
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                padding: "12px 14px",
+              }}
+            >
               <div
-                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 10,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Add Collateral
+                </span>
+              </div>
+              <input
+                type="text"
+                placeholder="0.00"
+                value={collateralAmt}
+                onChange={(e) => setCollateralAmt(e.target.value)}
+                style={inputStyle}
+              />
+              <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  alignItems: "center",
+                  marginTop: 8,
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                  }}
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 1 }}
                 >
-                  {label}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: 11,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Admin section ── */}
-          <div
-            style={{
-              paddingTop: 8,
-              borderTop: "1px solid var(--border)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            {/* Set Oracle Price */}
-            <div>
-              <div style={{ ...labelStyle, marginBottom: 6 }}>
-                Set Oracle Price (admin)
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="text"
-                  placeholder="1.00"
-                  value={mockPrice}
-                  onChange={(e) => setMockPrice(e.target.value)}
-                />
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 9,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                    }}
+                  >
+                    Available:
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 13,
+                      color: "var(--accent-amber)",
+                      fontWeight: 700,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {connected ? freeCollateral : "—"}{" "}
+                    <span style={{ fontSize: 9, opacity: 0.7 }}>POT</span>
+                  </span>
+                </div>
                 <button
-                  className="btn btn-ghost"
-                  onClick={handleSetMockPrice}
+                  onClick={handleDepositCollateral}
                   disabled={!!loading}
-                  style={{ flexShrink: 0, fontSize: 11 }}
+                  style={{
+                    background: "var(--accent-amber)",
+                    color: "#0d0e0f",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "3px 10px",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
                 >
-                  {loading === "Set Mock Price" ? (
-                    <span className="spinner" />
-                  ) : (
-                    "Set"
-                  )}
+                  {loading === "Deposit Collateral" ? "…" : "+ Add"}
                 </button>
               </div>
             </div>
 
-            {/* <div>
-              <div style={{ ...labelStyle, marginBottom: 6 }}>
-                Set Margin-Call HF (admin)
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="text"
-                  placeholder="150"
-                  value={mcHfInput}
-                  onChange={(e) => setMcHfInput(e.target.value)}
-                />
-                <button
-                  className="btn btn-ghost"
-                  onClick={handleSetMarginCallHf}
-                  disabled={!!loading}
-                  style={{ flexShrink: 0, fontSize: 11 }}
-                >
-                  {loading === "Set Margin Call HF" ? (
-                    <span className="spinner" />
-                  ) : (
-                    "Set"
-                  )}
-                </button>
-              </div>
-              <span
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 9,
-                  color: "var(--text-muted)",
-                  marginTop: 4,
-                  display: "block",
-                }}
-              >
-                Must be above liquidation HF (110). Default: 150
-              </span>
-            </div> */}
-          </div>
-        </div>
-
-        {/* ── Positions section ── */}
-        <div style={{ border: "1px solid var(--border)", borderRadius: 12 }}>
-          <div style={{ display: "flex", padding: "0 16px" }}>
-            {["Positions"].map((tab, i) => (
+            {/* Position collateral input */}
+            <div
+              style={{
+                background: token.bgElevated,
+                borderRadius: 10,
+                border: `1px solid ${token.border}`,
+                padding: "12px 14px",
+              }}
+            >
               <div
-                key={tab}
                 style={{
-                  padding: "10px 14px 10px 0",
-                  marginRight: 16,
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  color: i === 0 ? "var(--text-primary)" : "var(--text-muted)",
-                  borderBottom:
-                    i === 0
-                      ? "2px solid var(--accent-amber)"
-                      : "2px solid transparent",
-                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  justifyContent: "space-between",
+                  marginBottom: 10,
                 }}
               >
-                {tab}
-                {i === 0 && positions.length > 0 && (
-                  <span
-                    style={{
-                      background: "var(--accent-amber)",
-                      color: "#0d0e0f",
-                      borderRadius: 3,
-                      padding: "0 5px",
-                      fontSize: 9,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {positions.length}
-                  </span>
-                )}
+                <span
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 10,
+                    color: token.textMuted,
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Collateral to Use (POT)
+                </span>
               </div>
-            ))}
-          </div>
-
-          <div style={{ padding: "0 0 16px 0" }}>
-            <PositionsTable />
-
-            {/* {positions.length > 0 && (
-              <div
+              <input
+                type="text"
+                placeholder="0.00"
+                value={posCollateral}
+                onChange={(e) => setPosCollateral(e.target.value)}
                 style={{
-                  padding: "8px 16px 0",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
+                  ...inputStyle,
+                  color: posCollateral
+                    ? "var(--text-primary)"
+                    : "var(--text-muted)",
                 }}
-              >
-                {positions.map((pos: { id: bigint | number }) => {
-                  const id = BigInt(pos.id);
-                  const key = id.toString();
-                  const data = statusMap[key];
+              />
+              {posCollateral && (
+                <div className="position-size-preview">
+                  Position size ≈{" "}
+                  {(
+                    (parseFloat(posCollateral || "0") * posLeverage) /
+                    100
+                  ).toFixed(3)}{" "}
+                  POT
+                </div>
+              )}
+            </div>
 
+            {/* Leverage slider */}
+            <div style={{ padding: "2px 0" }}>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>Leverage</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                {[100, 200, 300, 500].map((lev) => {
+                  const isActive = posLeverage === lev;
                   return (
-                    <div
-                      key={key}
+                    <button
+                      key={lev}
+                      onClick={() => setPosLeverage(lev)}
                       style={{
-                        background: "var(--bg-elevated)",
+                        flex: 1,
+                        padding: "5px 0",
+                        borderRadius: 6,
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "pointer",
                         border: `1px solid ${
-                          data ? STATUS_COLORS[data.status] : "var(--border)"
+                          isActive ? "var(--accent-amber)" : "var(--border)"
                         }`,
-                        borderRadius: 10,
-                        padding: "12px 14px",
-                        transition: "border-color 0.3s",
+                        background: isActive
+                          ? "var(--accent-amber)"
+                          : "transparent",
+                        color: isActive ? "#0d0e0f" : "var(--text-muted)",
+                        transition: "all 0.15s",
                       }}
                     >
-               
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 8,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontFamily: "'IBM Plex Mono', monospace",
-                            fontSize: 10,
-                            color: "var(--text-muted)",
-                          }}
-                        >
-                          Position #{key}
-                        </span>
-                        {data ? (
-                          <span
-                            style={{
-                              fontFamily: "'IBM Plex Mono', monospace",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: STATUS_COLORS[data.status],
-                            }}
-                          >
-                            {STATUS_LABELS[data.status]}
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontFamily: "'IBM Plex Mono', monospace",
-                              fontSize: 10,
-                              color: "var(--text-muted)",
-                            }}
-                          >
-                            -
-                          </span>
-                        )}
-                      </div>
-
-             
-                      {data && (
-                        <>
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr 1fr",
-                              gap: "4px 16px",
-                              marginBottom: 10,
-                            }}
-                          >
-                            {[
-                              { label: "Health Factor", value: `${data.hf}` },
-                              {
-                                label: "PnL",
-                                value: `${
-                                  data.isProfit ? "+" : "−"
-                                }${fmtBalance(data.pnlAmount)} POT`,
-                                color: data.isProfit
-                                  ? "var(--accent-green)"
-                                  : "var(--accent-red)",
-                              },
-                              {
-                                label: "Interest Accrued",
-                                value: `${fmtBalance(data.interest)} POT`,
-                              },
-                              {
-                                label: "Collateral Now",
-                                value: `${fmtBalance(data.collateralNow)} POT`,
-                              },
-                            ].map(({ label, value, color }) => (
-                              <div key={label}>
-                                <div
-                                  style={{
-                                    fontFamily: "'IBM Plex Mono', monospace",
-                                    fontSize: 8,
-                                    color: "var(--text-muted)",
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.08em",
-                                  }}
-                                >
-                                  {label}
-                                </div>
-                                <div
-                                  style={{
-                                    fontFamily: "'IBM Plex Mono', monospace",
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    color: color ?? "var(--text-primary)",
-                                  }}
-                                >
-                                  {value}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-           
-                          {data.status !== "Healthy" && (
-                            <div
-                              style={{
-                                borderTop: "1px solid var(--border)",
-                                paddingTop: 10,
-                              }}
-                            >
-                              {data.collateralNeeded > 0n && (
-                                <div
-                                  style={{
-                                    fontFamily: "'IBM Plex Mono', monospace",
-                                    fontSize: 9,
-                                    color: STATUS_COLORS[data.status],
-                                    marginBottom: 6,
-                                  }}
-                                >
-                                  Add ≥ {fmtBalance(data.collateralNeeded)} POT
-                                  to reach safe margin
-                                </div>
-                              )}
-                              <div style={{ display: "flex", gap: 8 }}>
-                                <input
-                                  type="text"
-                                  placeholder={
-                                    data.collateralNeeded > 0n
-                                      ? fmtBalance(data.collateralNeeded)
-                                      : "0.00"
-                                  }
-                                  value={addColInputs[key] ?? ""}
-                                  onChange={(e) =>
-                                    setAddColInputs((prev) => ({
-                                      ...prev,
-                                      [key]: e.target.value,
-                                    }))
-                                  }
-                                  style={{
-                                    fontFamily: "'IBM Plex Mono', monospace",
-                                    fontSize: 12,
-                                  }}
-                                />
-                                <button
-                                  className="btn btn-ghost"
-                                  onClick={() =>
-                                    handleAddCollateralToPosition(id)
-                                  }
-                                  disabled={!!loading}
-                                  style={{
-                                    flexShrink: 0,
-                                    fontSize: 11,
-                                    borderColor: STATUS_COLORS[data.status],
-                                    color: STATUS_COLORS[data.status],
-                                  }}
-                                >
-                                  {loading === `Add Collateral #${key}` ? (
-                                    <span className="spinner" />
-                                  ) : (
-                                    "+ Add"
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
+                      {lev / 100}×
+                    </button>
                   );
                 })}
               </div>
-            )} */}
+              <div
+                style={{
+                  position: "relative",
+                  height: 20,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    height: 6,
+                    borderRadius: 3,
+                    background: `repeating-linear-gradient(-55deg, transparent, transparent 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 5px), linear-gradient(to right, #2a9d3a, #f0c040, #e03030)`,
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    height: 6,
+                    borderRadius: "0 3px 3px 0",
+                    background: "var(--bg-secondary, #1a1b1c)",
+                    width: `${100 - ((posLeverage - 100) / 400) * 100}%`,
+                    transition: "width 0.15s",
+                  }}
+                />
+                <input
+                  type="range"
+                  min="100"
+                  max="500"
+                  step="100"
+                  value={posLeverage}
+                  onChange={(e) => setPosLeverage(parseInt(e.target.value))}
+                  style={{
+                    position: "absolute",
+                    width: "100%",
+                    opacity: 0,
+                    cursor: "pointer",
+                    margin: 0,
+                    padding: 0,
+                    height: "100%",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 9,
+                  color: "var(--text-muted)",
+                  marginTop: 3,
+                }}
+              >
+                {["1×", "2×", "3×", "4×", "5×"].map((l) => (
+                  <span key={l}>{l}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Open position button */}
+            <button
+              onClick={!connected ? connect : handleOpenPosition}
+              disabled={!!loading || connecting}
+              style={{
+                width: "100%",
+                padding: "13px 0",
+                borderRadius: 10,
+                border: "none",
+                cursor: loading || connecting ? "not-allowed" : "pointer",
+                opacity: loading || connecting ? 0.5 : 1,
+                background:
+                  activeTab === "long"
+                    ? "var(--accent-green)"
+                    : "var(--accent-red)",
+                color: "#0d0e0f",
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {loading?.startsWith("Open") || connecting ? (
+                <span className="spinner" />
+              ) : !connected ? (
+                "Connect Wallet"
+              ) : (
+                `Open ${posDirection} ${posLeverage / 100}× Position`
+              )}
+            </button>
+
+            {/* Trade summary */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 7,
+                padding: "2px 0",
+              }}
+            >
+              {[
+                { label: "POT Price", value: `${currentPrice} POT` },
+                {
+                  label: "Position Size",
+                  value: posCollateral
+                    ? `${(
+                        (parseFloat(posCollateral) * posLeverage) /
+                        100
+                      ).toFixed(3)} POT`
+                    : "--",
+                },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {label}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 11,
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Admin section ── */}
+            <div
+              style={{
+                paddingTop: 8,
+                borderTop: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {/* Set Oracle Price */}
+              {connected && (
+                <div>
+                  <div style={{ ...labelStyle, marginBottom: 6 }}>
+                    Set Oracle Price (admin)
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="1.00"
+                      value={mockPrice}
+                      onChange={(e) => setMockPrice(e.target.value)}
+                    />
+                    <button
+                      className="btn btn-ghost"
+                      onClick={handleSetMockPrice}
+                      disabled={!!loading}
+                      style={{ flexShrink: 0, fontSize: 11 }}
+                    >
+                      {loading === "Set Mock Price" ? (
+                        <span className="spinner" />
+                      ) : (
+                        "Set"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Positions section ── */}
+          <div style={{ border: "1px solid var(--border)", borderRadius: 12 }}>
+            <div style={{ display: "flex", padding: "0 16px" }}>
+              {["Positions"].map((tab, i) => (
+                <div
+                  key={tab}
+                  style={{
+                    padding: "10px 14px 10px 0",
+                    marginRight: 16,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color:
+                      i === 0 ? "var(--text-primary)" : "var(--text-muted)",
+                    borderBottom:
+                      i === 0
+                        ? "2px solid var(--accent-amber)"
+                        : "2px solid transparent",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {tab}
+                  {i === 0 && connected && positions.length > 0 && (
+                    <span
+                      style={{
+                        background: "var(--accent-amber)",
+                        color: "#0d0e0f",
+                        borderRadius: 3,
+                        padding: "0 5px",
+                        fontSize: 9,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {positions.length}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: "0 0 16px 0" }}>
+              {connected ? (
+                <PositionsTable />
+              ) : (
+                <p
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                    padding: "20px 16px",
+                    margin: 0,
+                  }}
+                >
+                  Connect wallet to view positions
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
